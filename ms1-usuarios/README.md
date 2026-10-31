@@ -5,7 +5,7 @@ Microsserviço responsável pelo cadastro, consulta, atualização e exclusão d
 ## O que o serviço faz
 
 - Cadastro individual de usuário (`POST /api/usuarios`).
-- Cadastro em massa de usuários por arquivo CSV (`POST /api/usuarios/importar`), com relatório de sucesso/falha linha a linha.
+- Cadastro em massa de usuários por arquivo CSV (`POST /api/usuarios/importar`), com relatório de sucesso/falha linha a linha. Um arquivo de exemplo está disponível em `exemplo-importacao-usuarios.csv`, na raiz deste repositório.
 - Consulta, listagem, atualização e exclusão de usuários.
 - Autenticação de usuário por email e senha (`POST /api/usuarios/autenticar`), usada pelo MS2 para validar o Basic Auth das rotas protegidas.
 - Senha sempre armazenada com hash (BCrypt) e nunca retornada em nenhuma resposta de API.
