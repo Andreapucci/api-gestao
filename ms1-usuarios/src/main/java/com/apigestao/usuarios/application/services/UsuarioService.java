@@ -2,11 +2,14 @@
 package com.apigestao.usuarios.application.services;
 
 import com.apigestao.usuarios.domain.model.Usuario;
-import com.apigestao.usuarios.domain.ports.input.CreateUsuarioUseCase;
-import com.apigestao.usuarios.domain.ports.input.DeleteUsuarioUseCase;
-import com.apigestao.usuarios.domain.ports.input.FindUsuarioUseCase;
-import com.apigestao.usuarios.domain.ports.input.UpdateUsuarioUseCase;
+import com.apigestao.usuarios.application.usecases.CreateUsuarioUseCase;
+import com.apigestao.usuarios.application.usecases.DeleteUsuarioUseCase;
+import com.apigestao.usuarios.application.usecases.FindUsuarioUseCase;
+import com.apigestao.usuarios.application.usecases.UpdateUsuarioUseCase;
 import com.apigestao.usuarios.domain.ports.output.UsuarioRepositoryPort;
+
+import com.apigestao.usuarios.infrastructure.config.exception.EmailJaCadastradoException;
+import com.apigestao.usuarios.infrastructure.config.exception.UsuarioNotFoundException;
 
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -36,9 +39,7 @@ public class UsuarioService implements
     public Usuario executar(Usuario usuario) {
 
         if (usuarioRepositoryPort.existePorEmail(usuario.getEmail())) {
-            throw new IllegalArgumentException(
-                    "Já existe um usuário cadastrado com este e-mail."
-            );
+            throw new EmailJaCadastradoException(usuario.getEmail());
         }
 
         String senhaCriptografada =
@@ -68,18 +69,15 @@ public class UsuarioService implements
 
         Usuario usuarioExistente = usuarioRepositoryPort
                 .buscarPorId(id)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Usuário não encontrado."
-                ));
+                .orElseThrow(() -> new UsuarioNotFoundException(id));
 
         Optional<Usuario> usuarioComEmail =
                 usuarioRepositoryPort.buscarPorEmail(usuario.getEmail());
 
         if (usuarioComEmail.isPresent()
                 && !usuarioComEmail.get().getId().equals(id)) {
-            throw new IllegalArgumentException(
-                    "Este e-mail já está sendo utilizado."
-            );
+
+            throw new EmailJaCadastradoException(usuario.getEmail());
         }
 
         usuarioExistente.update(
@@ -94,9 +92,7 @@ public class UsuarioService implements
     public void excluir(Long id) {
 
         usuarioRepositoryPort.buscarPorId(id)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Usuário não encontrado."
-                ));
+                .orElseThrow(() -> new UsuarioNotFoundException(id));
 
         usuarioRepositoryPort.excluir(id);
     }

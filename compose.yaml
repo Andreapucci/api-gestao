@@ -62,12 +62,15 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db-transacoes:5432/${TRANSACTION_DB_NAME}
       SPRING_DATASOURCE_USERNAME: ${TRANSACTION_DB_USER}
       SPRING_DATASOURCE_PASSWORD: ${TRANSACTION_DB_PASSWORD}
+      MS1_BASE_URL: http://api-usuarios:8080
       SERVER_PORT: 8080
     ports:
       - "5002:8080"
     depends_on:
       db-transacoes:
         condition: service_healthy
+      api-usuarios:
+        condition: service_started
     restart: unless-stopped
 
   pgadmin:

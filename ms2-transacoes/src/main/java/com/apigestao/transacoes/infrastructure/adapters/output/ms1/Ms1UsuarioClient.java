@@ -1,6 +1,7 @@
 package com.apigestao.transacoes.infrastructure.adapters.output.ms1;
 
 import com.apigestao.transacoes.domain.ports.output.UsuarioClientPort;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -11,7 +12,8 @@ public class Ms1UsuarioClient implements UsuarioClientPort {
 
     private final RestClient ms1RestClient;
 
-    public Ms1UsuarioClient(RestClient ms1RestClient) {
+    public Ms1UsuarioClient(
+            @Qualifier("ms1RestClient") RestClient ms1RestClient) {
         this.ms1RestClient = ms1RestClient;
     }
 

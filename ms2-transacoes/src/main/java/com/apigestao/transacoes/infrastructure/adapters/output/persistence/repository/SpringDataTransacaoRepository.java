@@ -1,3 +1,4 @@
+
 package com.apigestao.transacoes.infrastructure.adapters.output.persistence.repository;
 
 import com.apigestao.transacoes.domain.model.TipoTransacao;
@@ -15,13 +16,13 @@ public interface SpringDataTransacaoRepository
     // Busca todas as transações de um usuário
     List<TransacaoEntity> findByUsuarioId(Long usuarioId);
 
-    // Busca transações com filtros
+    // Busca transações com filtros opcionais
     @Query("""
         SELECT t FROM TransacaoEntity t
         WHERE t.usuarioId = :usuarioId
-        AND (:inicio IS NULL OR t.dataHora >= :inicio)
-        AND (:fim IS NULL OR t.dataHora <= :fim)
-        AND (:tipo IS NULL OR t.tipo = :tipo)
+        AND t.dataHora >= COALESCE(:inicio, t.dataHora)
+        AND t.dataHora <= COALESCE(:fim, t.dataHora)
+        AND t.tipo = COALESCE(:tipo, t.tipo)
     """)
     List<TransacaoEntity> buscarComFiltros(
             @Param("usuarioId") Long usuarioId,

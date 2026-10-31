@@ -1,5 +1,5 @@
 
-package com.apigestao.usuarios.domain.ports.input;
+package com.apigestao.usuarios.application.usecases;
 
 import com.apigestao.usuarios.domain.model.Usuario;
 

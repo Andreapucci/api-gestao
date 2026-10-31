@@ -3,7 +3,9 @@ package com.apigestao.usuarios.infrastructure.adapters.input.web.mapper;
 import com.apigestao.usuarios.domain.model.Usuario;
 import com.apigestao.usuarios.infrastructure.adapters.input.web.dto.CreateUsuarioRequestDTO;
 import com.apigestao.usuarios.infrastructure.adapters.input.web.dto.UsuarioResponseDTO;
+import org.springframework.stereotype.Component;
 
+@Component
 public class UsuarioWebMapper {
 
     public Usuario toDomain(CreateUsuarioRequestDTO dto) {

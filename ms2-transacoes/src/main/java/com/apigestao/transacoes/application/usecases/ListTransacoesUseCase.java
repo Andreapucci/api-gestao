@@ -1,3 +1,4 @@
+
 package com.apigestao.transacoes.application.usecases;
 
 import com.apigestao.transacoes.domain.model.TipoTransacao;
@@ -22,6 +23,13 @@ public class ListTransacoesUseCase {
             LocalDateTime inicio,
             LocalDateTime fim,
             TipoTransacao tipo) {
+
+        // Valida se a data final não é anterior à data inicial
+        if (inicio != null && fim != null && fim.isBefore(inicio)) {
+            throw new IllegalArgumentException(
+                    "A data final não pode ser anterior à data inicial."
+            );
+        }
 
         return repositoryPort.buscarComFiltros(
                 usuarioId, inicio, fim, tipo

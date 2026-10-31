@@ -1,5 +1,5 @@
 
-package com.apigestao.usuarios.domain.ports.input;
+package com.apigestao.usuarios.application.usecases;
 
 public interface DeleteUsuarioUseCase {
 
