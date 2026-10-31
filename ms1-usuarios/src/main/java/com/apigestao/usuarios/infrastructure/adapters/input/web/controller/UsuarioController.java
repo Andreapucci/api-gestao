@@ -16,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.multipart.MultipartFile;
 import com.apigestao.usuarios.infrastructure.config.exception.UsuarioNotFoundException;
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
@@ -48,6 +49,7 @@ public class UsuarioController {
         this.autenticarUsuarioUseCase = autenticarUsuarioUseCase;
     }
 
+    @Operation(summary = "Cadastra um novo usuário")
     @PostMapping
     public ResponseEntity<UsuarioResponseDTO> criar(@Valid @RequestBody CreateUsuarioRequestDTO request) {
         Usuario usuario = usuarioWebMapper.toDomain(request);
@@ -59,6 +61,7 @@ public class UsuarioController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
+    @Operation(summary = "Importa usuários em massa a partir de um arquivo CSV")
     @PostMapping(value = "/importar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ImportacaoUsuarioResponseDTO> importarUsuarios(@RequestPart("arquivo") MultipartFile arquivo) {
 
@@ -67,6 +70,7 @@ public class UsuarioController {
         return ResponseEntity.ok(resultado);
     }
 
+    @Operation(summary = "Lista todos os usuários cadastrados")
     @GetMapping
     public ResponseEntity<List<UsuarioResponseDTO>> listar() {
 
@@ -75,6 +79,7 @@ public class UsuarioController {
         return ResponseEntity.ok(usuarios);
     }
 
+    @Operation(summary = "Busca um usuário pelo identificador")
     @GetMapping("/{id}")
     public ResponseEntity<UsuarioResponseDTO> buscarPorId(@PathVariable Long id) {
 
@@ -83,6 +88,7 @@ public class UsuarioController {
         return ResponseEntity.ok(usuarioWebMapper.toResponse(usuario));
     }
 
+    @Operation(summary = "Atualiza o nome e o email de um usuário existente")
     @PutMapping("/{id}")
     public ResponseEntity<UsuarioResponseDTO> atualizar(@PathVariable Long id, @Valid @RequestBody CreateUsuarioRequestDTO request) {
         Usuario usuario = usuarioWebMapper.toDomain(request);
@@ -92,6 +98,7 @@ public class UsuarioController {
         return ResponseEntity.ok(usuarioWebMapper.toResponse(usuarioAtualizado));
     }
 
+    @Operation(summary = "Exclui um usuário")
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> excluir(@PathVariable Long id) {
 
@@ -100,6 +107,7 @@ public class UsuarioController {
         return ResponseEntity.noContent().build();
     }
 
+    @Operation(summary = "Autentica um usuário por email e senha (usado pelo MS2 para Basic Auth)")
     @PostMapping("/autenticar")
     public ResponseEntity<UsuarioResponseDTO> autenticar(
             @Valid @RequestBody AutenticarRequestDTO request) {

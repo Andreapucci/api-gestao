@@ -64,6 +64,8 @@ docker compose down
 
 Os testes cobrem as regras críticas: aprovação/rejeição de transação (saldo, limite por transação), análise de despesas (agrupamento por categoria, exclusão de rejeitadas e depósitos, período padrão), geração do relatório CSV (cabeçalho, acentos, motivo de rejeição) e conversão de câmbio (resiliência quando a BrasilAPI falha).
 
+O build gera um relatório de cobertura (JaCoCo) em `target/site/jacoco/index.html`.
+
 ## Variáveis de ambiente
 
 Definidas no arquivo `.env` na raiz do projeto (veja `.env.example`) e no `compose.yaml`:

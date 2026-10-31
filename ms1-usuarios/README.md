@@ -54,6 +54,8 @@ docker compose down
 
 Os testes cobrem as regras críticas do domínio: cadastro com senha criptografada, impedimento de email duplicado, atualização, exclusão e autenticação (credenciais corretas, senha incorreta, email inexistente).
 
+O build gera um relatório de cobertura (JaCoCo) em `target/site/jacoco/index.html`.
+
 ## Variáveis de ambiente
 
 Definidas no arquivo `.env` na raiz do projeto (veja `.env.example`):
