@@ -2,22 +2,45 @@ package com.apigestao.transacoes.infrastructure.adapters.input.web.dto;
 
 import com.apigestao.transacoes.domain.model.StatusTransacao;
 import com.apigestao.transacoes.domain.model.TipoTransacao;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class TransacaoResponseDTO {
 
+    @Schema(example = "1")
     private Long id;
+
+    @Schema(example = "COMPRA")
     private TipoTransacao tipo;
+
+    @Schema(example = "150.90")
     private BigDecimal valor;
+
+    @Schema(example = "2026-01-15T10:30:00")
     private LocalDateTime dataHora;
+
+    @Schema(example = "Compra no supermercado")
     private String descricao;
+
+    @Schema(example = "Alimentação")
     private String categoria;
+
+    @Schema(example = "1")
     private Long usuarioId;
+
+    @Schema(example = "null")
     private Long usuarioDestinoId;
+
+    @Schema(example = "APROVADA")
     private StatusTransacao status;
+
+    @Schema(example = "null")
     private String motivoRejeicao;
+
+    private List<ConversaoMoedaDTO> conversoes;
 
     public TransacaoResponseDTO() {
     }
@@ -100,5 +123,13 @@ public class TransacaoResponseDTO {
 
     public void setMotivoRejeicao(String motivoRejeicao) {
         this.motivoRejeicao = motivoRejeicao;
+    }
+
+    public List<ConversaoMoedaDTO> getConversoes() {
+        return conversoes;
+    }
+
+    public void setConversoes(List<ConversaoMoedaDTO> conversoes) {
+        this.conversoes = conversoes;
     }
 }

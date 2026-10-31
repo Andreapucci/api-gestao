@@ -1,12 +1,24 @@
 package com.apigestao.transacoes.infrastructure.adapters.input.web.mapper;
 
+import com.apigestao.transacoes.application.usecases.ConverterValorTransacaoUseCase;
 import com.apigestao.transacoes.domain.model.Transacao;
+import com.apigestao.transacoes.domain.ports.output.CambioClientPort;
+import com.apigestao.transacoes.infrastructure.adapters.input.web.dto.ConversaoMoedaDTO;
 import com.apigestao.transacoes.infrastructure.adapters.input.web.dto.CreateTransacaoRequestDTO;
 import com.apigestao.transacoes.infrastructure.adapters.input.web.dto.TransacaoResponseDTO;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 @Component
 public class TransacaoWebMapper {
+
+    private final ConverterValorTransacaoUseCase converterValorUseCase;
+
+    public TransacaoWebMapper(
+            ConverterValorTransacaoUseCase converterValorUseCase) {
+        this.converterValorUseCase = converterValorUseCase;
+    }
 
     public Transacao toDomain(CreateTransacaoRequestDTO dto) {
         Transacao transacao = new Transacao();
@@ -33,7 +45,34 @@ public class TransacaoWebMapper {
         dto.setUsuarioDestinoId(transacao.getUsuarioDestinoId());
         dto.setStatus(transacao.getStatus());
         dto.setMotivoRejeicao(transacao.getMotivoRejeicao());
+        dto.setConversoes(montarConversoes(transacao));
 
         return dto;
+    }
+
+    private List<ConversaoMoedaDTO> montarConversoes(Transacao transacao) {
+
+        List<CambioClientPort.Cotacao> cotacoes =
+                converterValorUseCase.buscarCotacoes();
+
+        // Se a BrasilAPI estiver indisponível, não há cotações: a
+        // consulta da transação continua respondendo normalmente,
+        // só sem as conversões.
+        if (cotacoes.isEmpty()) {
+            return List.of(
+                    new ConversaoMoedaDTO(
+                            null, null, null, null, false)
+            );
+        }
+
+        return cotacoes.stream()
+                .map(cotacao -> new ConversaoMoedaDTO(
+                        cotacao.moeda(),
+                        converterValorUseCase.converter(
+                                transacao.getValor(), cotacao.valor()),
+                        cotacao.valor(),
+                        cotacao.data(),
+                        true))
+                .toList();
     }
 }

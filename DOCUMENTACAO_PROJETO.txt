@@ -1,0 +1,575 @@
+================================================================================
+API GESTÃO - DOCUMENTAÇÃO COMPLETA DO PROJETO
+================================================================================
+
+Este documento apresenta o projeto API Gestão: o que ele faz, como está
+organizado e o que cada classe e método faz, serviço por serviço.
+
+
+================================================================================
+PARTE 1 - APRESENTAÇÃO DO PROJETO (RESUMO POR FUNCIONALIDADE)
+================================================================================
+
+VISÃO GERAL
+-----------
+O projeto é composto por dois microsserviços que conversam entre si por REST
+e sobem juntos via Docker Compose:
+
+  - MS1 (ms1-usuarios): gerencia o cadastro e a autenticação dos usuários.
+  - MS2 (ms2-transacoes): gerencia as transações financeiras, consultando
+    o MS1 (para saber se o usuário existe), uma API Mock externa (para
+    saldo e limites) e a BrasilAPI (para câmbio).
+
+Os dois serviços seguem arquitetura hexagonal: o núcleo de regras de
+negócio (domain) não depende de Spring, JPA ou HTTP. Tudo que é detalhe
+de implementação (banco, web, clientes HTTP) fica isolado na camada de
+infraestrutura (infrastructure), e os casos de uso (application) orquestram
+o domínio através de portas (ports) implementadas por adapters.
+
+
+FUNCIONALIDADE 1 - CADASTRO DE USUÁRIOS (MS1)
+----------------------------------------------
+Qualquer pessoa pode se cadastrar informando nome, email e senha. A senha
+nunca é guardada em texto puro: ela passa por um hash (BCrypt) antes de ir
+para o banco, e nunca é devolvida em nenhuma resposta de API. Também é
+possível consultar, listar, atualizar e excluir usuários.
+
+
+FUNCIONALIDADE 2 - CADASTRO EM MASSA POR CSV (MS1)
+----------------------------------------------------
+Um administrador pode enviar um arquivo CSV com várias linhas de usuários
+de uma vez. Cada linha é validada individualmente: se uma linha tiver um
+erro (e-mail inválido, duplicado, senha curta, etc), ela é marcada como
+falha com o motivo, mas as demais linhas continuam sendo processadas
+normalmente. No final, o sistema devolve quantas entraram e quais falharam.
+
+
+FUNCIONALIDADE 3 - AUTENTICAÇÃO (MS1 + MS2)
+---------------------------------------------
+O MS1 expõe um endpoint de autenticação (email + senha) usado pelo MS2 para
+validar o Basic Auth das suas rotas. Assim, o MS2 nunca precisa saber como
+a senha é armazenada - ele só pergunta ao MS1 "essas credenciais são
+válidas?" e recebe sim ou não.
+
+
+FUNCIONALIDADE 4 - REGISTRO DE TRANSAÇÕES (MS2)
+---------------------------------------------------
+O usuário pode registrar quatro tipos de transação: DEPÓSITO, SAQUE,
+TRANSFERÊNCIA e COMPRA. Cada transação tem valor, data/hora, descrição,
+categoria e o usuário dono. Transferência exige um usuário de destino;
+compra exige uma categoria.
+
+Antes de aprovar um saque, transferência ou compra, o sistema consulta o
+saldo e os limites do usuário numa API Mock externa e aplica três regras:
+saldo suficiente, valor dentro do limite por transação, e soma do dia
+dentro do limite diário. Se qualquer regra falhar, a transação é gravada
+como REJEITADA com o motivo. Se passar em todas, é gravada como APROVADA
+e o saldo do usuário é atualizado na API Mock. Transações nunca são
+apagadas - para corrigir algo, registra-se uma nova transação.
+
+
+FUNCIONALIDADE 5 - CONSULTA DE SALDO (MS2)
+---------------------------------------------
+O usuário pode consultar o saldo atual da sua conta, que vem direto da
+API Mock (não é armazenado no banco do MS2).
+
+
+FUNCIONALIDADE 6 - CÂMBIO EM OUTRAS MOEDAS (MS2)
+----------------------------------------------------
+Toda vez que uma transação é criada, buscada por ID ou listada, o sistema
+consulta a BrasilAPI e mostra quanto aquele valor em reais representa em
+dólar (USD) e euro (EUR), junto com a taxa usada e a data da cotação. Se a
+BrasilAPI estiver fora do ar ou lenta, a consulta da transação continua
+respondendo normalmente - só que sem a conversão, sinalizando que ela está
+indisponível.
+
+
+FUNCIONALIDADE 7 - ANÁLISE DE DESPESAS (MS2)
+-------------------------------------------------
+O usuário pode consultar quanto gastou, considerando apenas transações
+aprovadas de saída (saques, transferências enviadas e compras). O sistema
+devolve três visões: total por categoria, total por dia e total por mês,
+dentro de um período informado. Se nenhum período for informado, o sistema
+usa o mês atual como padrão.
+
+
+FUNCIONALIDADE 8 - RELATÓRIO DE TRANSAÇÕES EM CSV (MS2)
+-----------------------------------------------------------
+O usuário pode baixar um arquivo CSV com o histórico das suas transações
+num período, para abrir no Excel. O arquivo usa separador ";" e inclui um
+marcador especial (BOM) para garantir que os acentos apareçam corretamente
+no Excel em português.
+
+
+FUNCIONALIDADE 9 - SEGURANÇA (MS2)
+---------------------------------------
+Todas as rotas de transação, saldo, despesas e relatório exigem autenticação
+via Basic Auth (usuário e senha validados contra o MS1). O Swagger e a
+documentação continuam abertos. Além disso, o sistema garante que um usuário
+autenticado não consiga ver ou criar transações em nome de outro usuário -
+se tentar, recebe "acesso negado" (403).
+
+
+FUNCIONALIDADE 10 - DOCKER COMPOSE
+---------------------------------------
+Um único comando sobe todo o ambiente: os dois bancos de dados PostgreSQL
+(um para cada serviço, totalmente separados), o MS1, o MS2 e um pgAdmin para
+inspecionar os bancos visualmente. O MS2 conversa com o MS1 pelo nome do
+serviço dentro da rede do Docker, não por "localhost".
+
+
+================================================================================
+PARTE 2 - DOCUMENTAÇÃO DE CLASSES E MÉTODOS
+================================================================================
+
+------------------------------------------------------------------------------
+MS1 - SERVIÇO DE USUÁRIOS (ms1-usuarios)
+------------------------------------------------------------------------------
+
+### DOMÍNIO (domain)
+
+--- Usuario.java (domain/model) ---
+Representa o usuário no núcleo do sistema, sem nenhuma dependência de
+framework.
+  - create(name, email, password): método estático que cria um novo
+    Usuario com id nulo e data de criação "agora". Usado ao cadastrar.
+  - getId(), getName(), getEmail(), getPassword(), getCreatedAt(): getters
+    simples de cada campo.
+  - update(name, email): atualiza nome e email de um usuário existente
+    (não altera senha nem id).
+
+--- UsuarioRepositoryPort.java (domain/ports/output) ---
+Interface (porta de saída) que define o que o domínio precisa do
+repositório, sem saber como ele é implementado.
+  - salvar(usuario): grava ou atualiza um usuário.
+  - buscarPorId(id): busca um usuário pelo identificador.
+  - buscarPorEmail(email): busca um usuário pelo email.
+  - listarTodos(): lista todos os usuários cadastrados.
+  - excluir(id): remove um usuário.
+  - existePorEmail(email): verifica se já existe usuário com aquele email.
+
+
+### APLICAÇÃO (application)
+
+--- CreateUsuarioUseCase.java (usecases) --- [interface]
+  - executar(usuario): cria um novo usuário.
+
+--- FindUsuarioUseCase.java (usecases) --- [interface]
+  - buscarPorId(id): busca um usuário pelo id.
+  - listarTodos(): lista todos os usuários.
+
+--- UpdateUsuarioUseCase.java (usecases) --- [interface]
+  - atualizar(id, usuario): atualiza os dados de um usuário existente.
+
+--- DeleteUsuarioUseCase.java (usecases) --- [interface]
+  - excluir(id): remove um usuário.
+
+--- AutenticarUsuarioUseCase.java (usecases) --- [interface]
+  - autenticar(email, password): valida as credenciais e devolve o
+    usuário autenticado, ou vazio se forem inválidas.
+
+--- UsuarioService.java (services) ---
+Implementa todas as interfaces de caso de uso acima. É o "cérebro" das
+regras de negócio de usuário.
+  - executar(usuario): verifica se o email já existe (lança
+    EmailJaCadastradoException se sim), criptografa a senha com BCrypt
+    e salva o novo usuário.
+  - buscarPorId(id): delega ao repositório.
+  - listarTodos(): delega ao repositório.
+  - atualizar(id, usuario): busca o usuário existente (lança
+    UsuarioNotFoundException se não existir), verifica se o novo email
+    já pertence a outro usuário (lança EmailJaCadastradoException se
+    sim), atualiza nome/email e salva.
+  - excluir(id): verifica se o usuário existe antes de excluir (lança
+    UsuarioNotFoundException se não existir).
+  - autenticar(email, password): busca o usuário pelo email e confere
+    se a senha informada bate com o hash salvo (usando
+    passwordEncoder.matches). Devolve o usuário se bater, vazio se não.
+
+--- ImportarUsuariosCsvService.java (services) ---
+Processa a importação em massa de usuários via arquivo CSV.
+  - importar(arquivo): lê o arquivo linha a linha. Valida o cabeçalho
+    (deve ser "name,email,password"). Para cada linha de dados, separa
+    as colunas, valida (nome, email e senha), cria o usuário via
+    CreateUsuarioUseCase. Se uma linha falhar, registra o erro com o
+    número da linha e o motivo, e continua para a próxima linha. Ao
+    final, devolve quantas entraram, quantas falharam e a lista de
+    erros.
+  - validarUsuario(name, email, password): valida tamanho e formato de
+    cada campo, lançando IllegalArgumentException com mensagem clara
+    quando algo está errado.
+  - separarColunas(linha): parser manual de uma linha CSV, respeitando
+    aspas e vírgulas dentro de campos entre aspas (CSV "de verdade").
+
+
+### INFRAESTRUTURA (infrastructure)
+
+--- UsuarioController.java (adapters/input/web/controller) ---
+Controller REST que expõe as rotas HTTP de usuário.
+  - criar(request): recebe os dados de cadastro, converte para o
+    domínio e chama o caso de uso de criação. Devolve 201 com o
+    usuário criado (sem senha).
+  - importarUsuarios(arquivo): recebe o arquivo CSV via multipart e
+    delega ao ImportarUsuariosCsvService. Devolve o resumo da
+    importação.
+  - listar(): devolve a lista de todos os usuários.
+  - buscarPorId(id): devolve o usuário encontrado ou lança
+    UsuarioNotFoundException (tratado como 404).
+  - atualizar(id, request): atualiza um usuário existente.
+  - excluir(id): remove um usuário e devolve 204 (sem conteúdo).
+  - autenticar(request): valida email/senha via
+    AutenticarUsuarioUseCase. Devolve 200 com o usuário (sem senha) se
+    válido, ou 401 se inválido. É este endpoint que o MS2 chama para
+    validar o Basic Auth.
+
+--- CreateUsuarioRequestDTO.java (adapters/input/web/dto) ---
+Dados de entrada para cadastrar/atualizar um usuário: name, email,
+password, cada um com validação de Bean Validation (@NotBlank, @Email,
+@Size) e exemplo de Swagger (@Schema).
+
+--- AutenticarRequestDTO.java (adapters/input/web/dto) ---
+Dados de entrada para autenticação: email e password, ambos
+obrigatórios.
+
+--- UsuarioResponseDTO.java (adapters/input/web/dto) ---
+Dados de saída de um usuário: id, name, email, createdAt. Note que NÃO
+tem campo de senha - é assim que se garante que a senha nunca aparece
+em resposta de API.
+
+--- ImportacaoUsuarioResponseDTO.java (adapters/input/web/dto) ---
+Resumo da importação CSV: totalSucesso, totalFalhas e a lista de erros
+(linha + motivo).
+
+--- UsuarioWebMapper.java (adapters/input/web/mapper) ---
+Converte entre DTO e domínio.
+  - toDomain(dto): cria um Usuario a partir do CreateUsuarioRequestDTO.
+  - toResponse(usuario): cria um UsuarioResponseDTO a partir do
+    domínio (sem incluir a senha).
+
+--- UsuarioPersistenceAdapter.java (adapters/output/persistence) ---
+Implementa UsuarioRepositoryPort usando Spring Data JPA.
+  - salvar(usuario): converte para entidade JPA, salva e converte de
+    volta para domínio.
+  - buscarPorId(id) / buscarPorEmail(email): busca a entidade e
+    converte para domínio, se encontrada.
+  - listarTodos(): lista todas as entidades e converte para domínio.
+  - excluir(id): remove a entidade pelo id.
+  - existePorEmail(email): verifica existência sem carregar a entidade
+    inteira.
+
+--- UsuarioEntity.java (adapters/output/persistence/entity) ---
+Entidade JPA que representa a tabela de usuários no banco (id, name,
+email, password, createdAt). É o único lugar onde a anotação @Entity
+aparece para usuário.
+
+--- UsuarioMapper.java (adapters/output/persistence/mapper) ---
+Converte entre domínio e entidade JPA.
+  - toEntity(usuario): cria a UsuarioEntity a partir do domínio.
+  - toDomain(entity): cria o Usuario a partir da entidade.
+
+--- SpringDataUsuarioRepository.java (adapters/output/persistence/repository) ---
+Interface do Spring Data JPA (JpaRepository<UsuarioEntity, Long>).
+  - findByEmail(email): busca por email (usado no mapper acima).
+  - existsByEmail(email): verifica existência por email.
+
+--- PasswordConfig.java (infrastructure/config) ---
+  - passwordEncoder(): declara o bean BCryptPasswordEncoder usado para
+    criptografar e comparar senhas em todo o serviço.
+
+--- GlobalExceptionHandler.java (infrastructure/config/exception) ---
+Captura exceções lançadas pelos controllers e as transforma em
+respostas HTTP padronizadas.
+  - handleUsuarioNotFound(exception): devolve 404.
+  - handleEmailDuplicado(exception): devolve 409 (conflito).
+  - handleValidation(exception): devolve 400 com a lista de campos
+    inválidos e suas mensagens (erro de @Valid).
+  - handleIllegalArgument(exception): devolve 400 para outras
+    validações de negócio.
+
+--- EmailJaCadastradoException.java / UsuarioNotFoundException.java
+    (infrastructure/config/exception) ---
+Exceções de negócio específicas, lançadas pelo UsuarioService e
+capturadas pelo GlobalExceptionHandler.
+
+--- Ms1UsuariosApplication.java ---
+Classe principal do Spring Boot que inicia o MS1.
+
+
+------------------------------------------------------------------------------
+MS2 - SERVIÇO DE TRANSAÇÕES (ms2-transacoes)
+------------------------------------------------------------------------------
+
+### DOMÍNIO (domain)
+
+--- Transacao.java (domain/model) ---
+Representa uma transação financeira no núcleo do sistema, sem
+dependência de framework. Tem id, tipo, valor, dataHora, descricao,
+categoria, usuarioId, usuarioDestinoId, status e motivoRejeicao, todos
+com getters e setters simples.
+
+--- TipoTransacao.java (domain/model) --- [enum]
+DEPOSITO, SAQUE, TRANSFERENCIA, COMPRA.
+
+--- StatusTransacao.java (domain/model) --- [enum]
+APROVADA, REJEITADA.
+
+--- TransacaoRepositoryPort.java (domain/ports/output) --- [interface]
+  - salvar(transacao): grava uma transação.
+  - buscarPorId(id): busca pelo identificador.
+  - buscarPorUsuarioId(usuarioId): lista todas as transações de um
+    usuário (usado para calcular o total do dia nos limites).
+  - buscarComFiltros(usuarioId, inicio, fim, tipo): lista com filtro
+    opcional por período e tipo.
+
+--- ContaClientPort.java (domain/ports/output) --- [interface]
+Abstrai a comunicação com a API Mock de saldo/limites.
+  - consultarConta(usuarioId): devolve os dados da conta (saldo,
+    limiteDiario, limitePorTransacao).
+  - atualizarSaldo(usuarioId, novoSaldo): atualiza o saldo após uma
+    transação aprovada.
+  - Possui o record interno ContaDados(id, usuarioId, saldo,
+    limiteDiario, limitePorTransacao).
+
+--- UsuarioClientPort.java (domain/ports/output) --- [interface]
+  - usuarioExiste(usuarioId): verifica no MS1 se o usuário existe.
+
+--- CambioClientPort.java (domain/ports/output) --- [interface]
+  - buscarCotacao(moeda): devolve a cotação da moeda na BrasilAPI, ou
+    vazio se a API falhar. Possui o record interno Cotacao(moeda,
+    valor, data).
+
+
+### APLICAÇÃO (application/usecases)
+
+--- CreateTransacaoUseCase.java ---
+O coração das regras de negócio de transação.
+  - executar(transacao): valida as regras básicas (validarRegras),
+    confirma que o usuário (e o destinatário, se houver) existem no
+    MS1, consulta a conta de origem na API Mock. Se não for depósito,
+    chama verificarLimites; se algum limite falhar, grava a transação
+    como REJEITADA com o motivo e para aqui. Se passar, marca como
+    APROVADA, atualiza o(s) saldo(s) na API Mock (debita do remetente
+    e credita no destinatário em transferências) e salva a transação.
+  - verificarLimites(transacao, conta): verifica, em ordem: saldo
+    suficiente, valor dentro do limite por transação, e soma do dia
+    (buscando as transações aprovadas do usuário naquele dia) dentro
+    do limite diário. Devolve o motivo da rejeição, ou null se tudo
+    estiver ok.
+  - validarRegras(transacao): valida que o tipo foi informado, que
+    transferências têm destinatário diferente do remetente, que
+    outros tipos não têm destinatário, e que compras têm categoria.
+    Lança IllegalArgumentException quando algo está errado.
+
+--- FindTransacaoUseCase.java ---
+  - executar(id, usuarioId): busca uma transação pelo id, mas só a
+    devolve se ela pertencer ao usuarioId informado (garante que
+    ninguém veja a transação de outra pessoa).
+
+--- ListTransacoesUseCase.java ---
+  - executar(usuarioId, inicio, fim, tipo): valida que a data final
+    não é anterior à inicial, e delega ao repositório com os filtros.
+
+--- AnalisarDespesasUseCase.java ---
+  - executar(usuarioId, inicio, fim): define o período (mês atual, se
+    não informado), busca as transações do usuário no período, filtra
+    só as aprovadas dos tipos de despesa (SAQUE, TRANSFERENCIA,
+    COMPRA), e calcula o total geral, o total por categoria, por dia e
+    por mês. Devolve tudo num record Resultado.
+
+--- GerarRelatorioCsvUseCase.java ---
+  - executar(usuarioId, inicio, fim): busca as transações do usuário
+    no período e monta um CSV (com BOM UTF-8 e separador ";") com as
+    colunas Data, Tipo, Categoria, Descricao, Valor, Status e Motivo.
+  - escapar(valor): trata campos que contenham ";", aspas ou quebras
+    de linha, colocando-os entre aspas conforme o padrão CSV.
+
+--- ConverterValorTransacaoUseCase.java ---
+  - buscarCotacoes(): busca a cotação de USD e EUR na BrasilAPI (via
+    CambioClientPort), ignorando silenciosamente as moedas que
+    falharem.
+  - converter(valorEmReal, taxa): divide o valor em real pela taxa
+    para obter o valor na moeda estrangeira.
+
+
+### INFRAESTRUTURA (infrastructure)
+
+--- TransacaoController.java (adapters/input/web/controller) ---
+Controller REST com todas as rotas de transação.
+  - criar(dto, usuarioId): cria uma transação para o usuário
+    autenticado (identificado pelo header X-Usuario-Id). Devolve 201.
+  - buscarPorId(id, usuarioId): busca uma transação, 404 se não
+    encontrada ou não pertencer ao usuário.
+  - listarPorUsuario(usuarioId, inicio, fim, tipo): lista as
+    transações do usuário com filtros opcionais.
+  - consultarSaldo(usuarioId): devolve o saldo atual vindo da API
+    Mock (via ContaClientPort).
+  - analisarDespesas(usuarioId, inicio, fim): monta a resposta de
+    análise de despesas a partir do AnalisarDespesasUseCase.
+  - gerarRelatorioCsv(usuarioId, inicio, fim): gera o arquivo CSV e
+    devolve com cabeçalhos de download (Content-Disposition).
+
+--- CreateTransacaoRequestDTO.java (adapters/input/web/dto) ---
+Dados de entrada para criar uma transação: tipo, valor, descricao,
+categoria, usuarioDestinoId, com validações (@NotNull, @DecimalMin,
+@Size) e exemplos de Swagger.
+
+--- TransacaoResponseDTO.java (adapters/input/web/dto) ---
+Dados de saída de uma transação: todos os campos do domínio mais a
+lista de conversões de moeda (conversoes).
+
+--- ConversaoMoedaDTO.java (adapters/input/web/dto) ---
+Representa a conversão de uma transação para uma moeda estrangeira:
+moeda, valorConvertido, taxa, dataTaxa e a flag disponivel (false
+quando a BrasilAPI falhou).
+
+--- AnaliseDespesasResponseDTO.java (adapters/input/web/dto) ---
+Resposta da análise de despesas: inicio, fim, totalGeral, porCategoria
+(lista de ResumoCategoria: categoria + total), porDia (mapa de data
+para total) e porMes (mapa de "yyyy-MM" para total).
+
+--- TransacaoWebMapper.java (adapters/input/web/mapper) ---
+Converte entre DTO e domínio, e monta as conversões de câmbio.
+  - toDomain(dto): cria uma Transacao a partir do
+    CreateTransacaoRequestDTO.
+  - toResponse(transacao): cria o TransacaoResponseDTO, incluindo a
+    chamada a montarConversoes.
+  - montarConversoes(transacao): usa o ConverterValorTransacaoUseCase
+    para buscar as cotações e montar a lista de ConversaoMoedaDTO. Se
+    a BrasilAPI estiver fora do ar (lista de cotações vazia), devolve
+    um único item com disponivel=false, em vez de quebrar a resposta.
+
+--- TransacaoPersistenceAdapter.java (adapters/output/persistence) ---
+Implementa TransacaoRepositoryPort usando Spring Data JPA.
+  - salvar(transacao): converte para entidade, salva e converte de
+    volta.
+  - buscarPorId(id): busca a entidade e converte, se encontrada.
+  - buscarPorUsuarioId(usuarioId): lista todas as transações daquele
+    usuário.
+  - buscarComFiltros(usuarioId, inicio, fim, tipo): delega ao
+    repositório Spring Data com os filtros.
+
+--- TransacaoEntity.java (adapters/output/persistence/entity) ---
+Entidade JPA que representa a tabela de transações no banco: id,
+tipo, valor, dataHora, descricao, categoria, usuarioId,
+usuarioDestinoId, status, motivoRejeicao.
+
+--- TransacaoMapper.java (adapters/output/persistence/mapper) ---
+Converte entre domínio e entidade JPA.
+  - toEntity(transacao): cria a TransacaoEntity a partir do domínio.
+  - toDomain(entity): cria a Transacao a partir da entidade.
+
+--- SpringDataTransacaoRepository.java (adapters/output/persistence/repository) ---
+Interface do Spring Data JPA.
+  - findByUsuarioId(usuarioId): lista as transações de um usuário.
+  - buscarComFiltros(usuarioId, inicio, fim, tipo): query customizada
+    com filtros opcionais por período e tipo.
+
+--- MockApiContaClient.java (adapters/output/mockapi) ---
+Implementa ContaClientPort consumindo a API Mock externa via
+RestClient.
+  - consultarConta(usuarioId): faz GET /contas?usuarioId=... na API
+    Mock e converte a resposta em ContaDados. Lança
+    IllegalArgumentException se a conta não existir.
+  - atualizarSaldo(usuarioId, novoSaldo): consulta a conta atual e faz
+    PUT /contas/{id} com o novo saldo (preservando os limites).
+  - converterConta(conta): converte o DTO interno da API Mock para o
+    record ContaDados do domínio.
+
+--- Ms1UsuarioClient.java (adapters/output/ms1) ---
+Implementa UsuarioClientPort consumindo o MS1 via RestClient.
+  - usuarioExiste(usuarioId): faz GET /api/usuarios/{id} no MS1. Se
+    devolver 404, retorna false; qualquer outro erro é propagado.
+
+--- BrasilApiCambioClient.java (adapters/output/brasilapi) ---
+Implementa CambioClientPort consumindo a BrasilAPI via RestClient.
+  - buscarCotacao(moeda): tenta buscar a cotação de hoje; se não
+    encontrar (fim de semana/feriado) ou a API falhar, tenta o dia
+    anterior antes de desistir.
+  - buscarCotacaoNaData(moeda, data): faz GET
+    /api/cambio/v1/cotacao/{moeda}/{data}. Qualquer falha de rede ou
+    resposta vazia é capturada e devolve Optional.empty(), nunca
+    propaga exceção.
+
+--- Ms1ClientConfig.java (infrastructure/config) ---
+Declara os beans RestClient usados pelos adapters acima.
+  - ms1RestClient(): cliente HTTP configurado com a URL base do MS1.
+  - mockApiRestClient(): cliente HTTP configurado com a URL base da
+    API Mock.
+  - brasilApiRestClient(): cliente HTTP configurado com a URL base da
+    BrasilAPI.
+
+--- SecurityConfig.java (infrastructure/config/security) ---
+Configuração central de segurança do MS2.
+  - authenticationManager(ms1AuthenticationProvider): registra o
+    provider customizado que valida credenciais contra o MS1.
+  - securityFilterChain(http): define que o Swagger/OpenAPI ficam
+    abertos e todo o resto exige autenticação; ativa o Basic Auth;
+    registra o TitularidadeFilter depois do filtro de autenticação do
+    Spring Security.
+
+--- Ms1AuthenticationProvider.java (infrastructure/config/security) ---
+Provider customizado que valida as credenciais do Basic Auth.
+  - authenticate(authentication): extrai email e senha da
+    requisição, chama POST /api/usuarios/autenticar no MS1. Se o MS1
+    confirmar, devolve um UsernamePasswordAuthenticationToken com o
+    UsuarioAutenticado como principal. Se o MS1 recusar (401), lança
+    BadCredentialsException.
+  - supports(authentication): informa ao Spring Security que este
+    provider entende tokens do tipo usuário/senha.
+
+--- UsuarioAutenticado.java (infrastructure/config/security) ---
+Classe simples que representa o usuário logado dentro do contexto de
+segurança: id e email. É usada pelo TitularidadeFilter para comparar
+com o header X-Usuario-Id.
+
+--- TitularidadeFilter.java (infrastructure/config/security) ---
+Filtro que roda depois da autenticação.
+  - doFilterInternal(request, response, filterChain): se houver um
+    usuário autenticado e a requisição tiver o header X-Usuario-Id,
+    compara os dois ids. Se forem diferentes, devolve 403 Forbidden
+    e interrompe a requisição. Se o header não for um número válido,
+    devolve 400. Caso contrário, deixa a requisição seguir
+    normalmente.
+
+--- GlobalExceptionHandler.java (infrastructure/config/exception) ---
+Captura exceções lançadas pelos controllers do MS2.
+  - tratarErroValidacao(exception): devolve 400 com os campos
+    inválidos e suas mensagens (erro de @Valid), no mesmo formato
+    usado pelo MS1.
+  - tratarArgumentoInvalido(exception): devolve 400 para erros de
+    regra de negócio (ex.: saldo insuficiente, tipo inválido).
+  - tratarErroIntegracao(exception): devolve 503 quando a comunicação
+    com algum serviço externo (API Mock, por exemplo) falha.
+
+--- Ms2TransacoesApplication.java ---
+Classe principal do Spring Boot que inicia o MS2.
+
+
+PARTE 3 - TESTES AUTOMATIZADOS
+
+MS1:
+  - UsuarioServiceTest: cadastro com senha criptografada, email
+    duplicado, busca, listagem, atualização, exclusão.
+  - AutenticarUsuarioUseCaseTest: autenticação correta, senha
+    incorreta, email inexistente.
+  - ImportarUsuariosCsvServiceTest, UsuarioPersistenceAdapterTest,
+    UsuarioMapperTest, UsuarioControllerTest, UsuarioWebMapperTest,
+    GlobalExceptionHandlerTest: cobrem persistência, mapeamento,
+    controller e tratamento de erros.
+
+MS2:
+  - CreateTransacaoUseCaseTest: rejeição por saldo insuficiente,
+    aprovação dentro dos limites, rejeição por limite por transação,
+    depósito sem validação de limite, transferência sem destinatário,
+    compra sem categoria.
+  - AnalisarDespesasUseCaseTest: agrupamento por categoria, exclusão
+    de rejeitadas/depósitos, período padrão (mês atual), período
+    customizado, transferência como despesa.
+  - GerarRelatorioCsvUseCaseTest: cabeçalho e linhas, BOM UTF-8,
+    motivo de rejeição, CSV vazio.
+  - ConverterValorTransacaoUseCaseTest: busca de cotações, resiliência
+    quando uma moeda falha, lista vazia quando tudo falha, cálculo da
+    conversão.
+
+
+FIM DO DOCUMENTO

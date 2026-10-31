@@ -2,6 +2,7 @@
 package com.apigestao.usuarios.application.services;
 
 import com.apigestao.usuarios.domain.model.Usuario;
+import com.apigestao.usuarios.application.usecases.AutenticarUsuarioUseCase;
 import com.apigestao.usuarios.application.usecases.CreateUsuarioUseCase;
 import com.apigestao.usuarios.application.usecases.DeleteUsuarioUseCase;
 import com.apigestao.usuarios.application.usecases.FindUsuarioUseCase;
@@ -22,7 +23,8 @@ public class UsuarioService implements
         CreateUsuarioUseCase,
         FindUsuarioUseCase,
         UpdateUsuarioUseCase,
-        DeleteUsuarioUseCase {
+        DeleteUsuarioUseCase,
+        AutenticarUsuarioUseCase {
 
     private final UsuarioRepositoryPort usuarioRepositoryPort;
     private final BCryptPasswordEncoder passwordEncoder;
@@ -95,5 +97,13 @@ public class UsuarioService implements
                 .orElseThrow(() -> new UsuarioNotFoundException(id));
 
         usuarioRepositoryPort.excluir(id);
+    }
+
+    @Override
+    public Optional<Usuario> autenticar(String email, String password) {
+
+        return usuarioRepositoryPort.buscarPorEmail(email)
+                .filter(usuario ->
+                        passwordEncoder.matches(password, usuario.getPassword()));
     }
 }

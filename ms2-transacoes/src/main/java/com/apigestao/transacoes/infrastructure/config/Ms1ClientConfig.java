@@ -14,6 +14,9 @@ public class Ms1ClientConfig {
     @Value("${mockapi.base-url}")
     private String mockApiBaseUrl;
 
+    @Value("${brasilapi.base-url}")
+    private String brasilApiBaseUrl;
+
     @Bean
     public RestClient ms1RestClient() {
         return RestClient.builder()
@@ -25,6 +28,13 @@ public class Ms1ClientConfig {
     public RestClient mockApiRestClient() {
         return RestClient.builder()
                 .baseUrl(mockApiBaseUrl)
+                .build();
+    }
+
+    @Bean
+    public RestClient brasilApiRestClient() {
+        return RestClient.builder()
+                .baseUrl(brasilApiBaseUrl)
                 .build();
     }
 }

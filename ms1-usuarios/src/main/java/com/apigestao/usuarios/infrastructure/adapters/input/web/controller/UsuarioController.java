@@ -1,10 +1,12 @@
 package com.apigestao.usuarios.infrastructure.adapters.input.web.controller;
 
 import com.apigestao.usuarios.domain.model.Usuario;
+import com.apigestao.usuarios.application.usecases.AutenticarUsuarioUseCase;
 import com.apigestao.usuarios.application.usecases.CreateUsuarioUseCase;
 import com.apigestao.usuarios.application.usecases.DeleteUsuarioUseCase;
 import com.apigestao.usuarios.application.usecases.FindUsuarioUseCase;
 import com.apigestao.usuarios.application.usecases.UpdateUsuarioUseCase;
+import com.apigestao.usuarios.infrastructure.adapters.input.web.dto.AutenticarRequestDTO;
 import com.apigestao.usuarios.infrastructure.adapters.input.web.dto.CreateUsuarioRequestDTO;
 import com.apigestao.usuarios.infrastructure.adapters.input.web.dto.UsuarioResponseDTO;
 import com.apigestao.usuarios.infrastructure.adapters.input.web.mapper.UsuarioWebMapper;
@@ -34,14 +36,16 @@ public class UsuarioController {
     private final DeleteUsuarioUseCase deleteUsuarioUseCase;
     private final UsuarioWebMapper usuarioWebMapper;
     private final ImportarUsuariosCsvService importarUsuariosCsvService;
+    private final AutenticarUsuarioUseCase autenticarUsuarioUseCase;
 
-    public UsuarioController(CreateUsuarioUseCase createUsuarioUseCase, FindUsuarioUseCase findUsuarioUseCase, UpdateUsuarioUseCase updateUsuarioUseCase, DeleteUsuarioUseCase deleteUsuarioUseCase, UsuarioWebMapper usuarioWebMapper, ImportarUsuariosCsvService importarUsuariosCsvService) {
+    public UsuarioController(CreateUsuarioUseCase createUsuarioUseCase, FindUsuarioUseCase findUsuarioUseCase, UpdateUsuarioUseCase updateUsuarioUseCase, DeleteUsuarioUseCase deleteUsuarioUseCase, UsuarioWebMapper usuarioWebMapper, ImportarUsuariosCsvService importarUsuariosCsvService, AutenticarUsuarioUseCase autenticarUsuarioUseCase) {
         this.createUsuarioUseCase = createUsuarioUseCase;
         this.findUsuarioUseCase = findUsuarioUseCase;
         this.updateUsuarioUseCase = updateUsuarioUseCase;
         this.deleteUsuarioUseCase = deleteUsuarioUseCase;
         this.usuarioWebMapper = usuarioWebMapper;
         this.importarUsuariosCsvService = importarUsuariosCsvService;
+        this.autenticarUsuarioUseCase = autenticarUsuarioUseCase;
     }
 
     @PostMapping
@@ -94,5 +98,16 @@ public class UsuarioController {
         deleteUsuarioUseCase.excluir(id);
 
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/autenticar")
+    public ResponseEntity<UsuarioResponseDTO> autenticar(
+            @Valid @RequestBody AutenticarRequestDTO request) {
+
+        return autenticarUsuarioUseCase
+                .autenticar(request.getEmail(), request.getPassword())
+                .map(usuarioWebMapper::toResponse)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
     }
 }
