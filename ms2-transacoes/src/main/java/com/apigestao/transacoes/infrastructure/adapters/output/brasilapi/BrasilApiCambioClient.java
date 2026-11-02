@@ -1,6 +1,8 @@
+
 package com.apigestao.transacoes.infrastructure.adapters.output.brasilapi;
 
 import com.apigestao.transacoes.domain.ports.output.CambioClientPort;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -28,25 +30,33 @@ public class BrasilApiCambioClient implements CambioClientPort {
     @Override
     public Optional<Cotacao> buscarCotacao(String moeda) {
 
-        // Tenta a cotação de hoje; se não houver (fim de semana/feriado)
-        // ou a API falhar, tenta o dia anterior antes de desistir.
-        Optional<Cotacao> cotacaoHoje = buscarCotacaoNaData(
-                moeda, LocalDate.now());
+        // Procura a última cotação disponível nos últimos 7 dias.
+        for (int dias = 0; dias < 7; dias++) {
 
-        if (cotacaoHoje.isPresent()) {
-            return cotacaoHoje;
+            LocalDate dataConsulta = LocalDate.now().minusDays(dias);
+
+            Optional<Cotacao> cotacao =
+                    buscarCotacaoNaData(moeda, dataConsulta);
+
+            if (cotacao.isPresent()) {
+                return cotacao;
+            }
         }
 
-        return buscarCotacaoNaData(moeda, LocalDate.now().minusDays(1));
+        return Optional.empty();
     }
 
     private Optional<Cotacao> buscarCotacaoNaData(
             String moeda, LocalDate data) {
 
         try {
+
             BrasilApiResponse resposta = brasilApiRestClient.get()
-                    .uri("/api/cambio/v1/cotacao/{moeda}/{data}",
-                            moeda, data.format(FORMATO_DATA))
+                    .uri(
+                            "/api/cambio/v1/cotacao/{moeda}/{data}",
+                            moeda,
+                            data.format(FORMATO_DATA)
+                    )
                     .retrieve()
                     .body(BrasilApiResponse.class);
 
@@ -56,31 +66,45 @@ public class BrasilApiCambioClient implements CambioClientPort {
                 return Optional.empty();
             }
 
-            BigDecimal valorVenda = resposta.cotacoes()
-                    .get(0)
-                    .cotacaoVenda();
+            CotacaoItem item =
+                    resposta.cotacoes().get(resposta.cotacoes().size() - 1);
+
+            if (item == null
+                    || item.cotacaoVenda() == null
+                    || item.cotacaoVenda().compareTo(BigDecimal.ZERO) <= 0) {
+                return Optional.empty();
+            }
+
+            LocalDate dataCotacao = resposta.data() != null
+                    ? LocalDate.parse(resposta.data())
+                    : data;
 
             return Optional.of(
-                    new Cotacao(moeda, valorVenda, data)
+                    new Cotacao(
+                            moeda,
+                            item.cotacaoVenda(),
+                            dataCotacao
+                    )
             );
 
         } catch (RestClientException e) {
-            // A BrasilAPI pode estar fora do ar, lenta ou sem cotação
-            // para a data informada. Em qualquer caso, não propagamos
-            // o erro: a conversão simplesmente fica indisponível.
             return Optional.empty();
         }
     }
 
     private record BrasilApiResponse(
             String moeda,
+            String data,
             List<CotacaoItem> cotacoes
-    ) {
-    }
+    ) {}
 
     private record CotacaoItem(
+
+            @JsonProperty("cotacao_compra")
             BigDecimal cotacaoCompra,
+
+            @JsonProperty("cotacao_venda")
             BigDecimal cotacaoVenda
-    ) {
-    }
+
+    ) {}
 }

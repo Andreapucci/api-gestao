@@ -1,3 +1,4 @@
+
 package com.apigestao.transacoes.infrastructure.config.security;
 
 import jakarta.servlet.FilterChain;
@@ -23,14 +24,22 @@ public class TitularidadeFilter extends OncePerRequestFilter {
         Authentication authentication =
                 SecurityContextHolder.getContext().getAuthentication();
 
-        String usuarioIdHeader = request.getHeader("X-Usuario-Id");
-
-        // Só valida quando há usuário autenticado e o header foi enviado.
-        // Rotas sem autenticação (Swagger, docs) já foram liberadas pelo
-        // SecurityConfig e nem chegam até aqui autenticadas.
         if (authentication != null
-                && authentication.getPrincipal() instanceof UsuarioAutenticado usuarioAutenticado
-                && usuarioIdHeader != null) {
+                && authentication.isAuthenticated()
+                && authentication.getPrincipal()
+                instanceof UsuarioAutenticado usuarioAutenticado) {
+
+            String usuarioIdHeader = request.getHeader("X-Usuario-Id");
+
+            if (usuarioIdHeader == null || usuarioIdHeader.isBlank()) {
+                response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                response.setContentType("application/json");
+                response.setCharacterEncoding("UTF-8");
+                response.getWriter().write(
+                        "{\"message\":\"Cabeçalho X-Usuario-Id obrigatório.\"}"
+                );
+                return;
+            }
 
             try {
                 Long usuarioIdSolicitado = Long.parseLong(usuarioIdHeader);
@@ -38,6 +47,7 @@ public class TitularidadeFilter extends OncePerRequestFilter {
                 if (!usuarioIdSolicitado.equals(usuarioAutenticado.getId())) {
                     response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                     response.setContentType("application/json");
+                    response.setCharacterEncoding("UTF-8");
                     response.getWriter().write(
                             "{\"message\":\"Você não pode acessar dados de outro usuário.\"}"
                     );
@@ -47,6 +57,7 @@ public class TitularidadeFilter extends OncePerRequestFilter {
             } catch (NumberFormatException e) {
                 response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
                 response.setContentType("application/json");
+                response.setCharacterEncoding("UTF-8");
                 response.getWriter().write(
                         "{\"message\":\"Cabeçalho X-Usuario-Id inválido.\"}"
                 );

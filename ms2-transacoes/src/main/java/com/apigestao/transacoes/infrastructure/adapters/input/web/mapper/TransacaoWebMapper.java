@@ -1,3 +1,4 @@
+
 package com.apigestao.transacoes.infrastructure.adapters.input.web.mapper;
 
 import com.apigestao.transacoes.application.usecases.ConverterValorTransacaoUseCase;
@@ -8,6 +9,7 @@ import com.apigestao.transacoes.infrastructure.adapters.input.web.dto.CreateTran
 import com.apigestao.transacoes.infrastructure.adapters.input.web.dto.TransacaoResponseDTO;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @Component
@@ -50,26 +52,33 @@ public class TransacaoWebMapper {
         return dto;
     }
 
-    private List<ConversaoMoedaDTO> montarConversoes(Transacao transacao) {
+    private List<ConversaoMoedaDTO> montarConversoes(
+            Transacao transacao) {
 
         List<CambioClientPort.Cotacao> cotacoes =
                 converterValorUseCase.buscarCotacoes();
 
-        // Se a BrasilAPI estiver indisponível, não há cotações: a
-        // consulta da transação continua respondendo normalmente,
-        // só sem as conversões.
-        if (cotacoes.isEmpty()) {
+        List<CambioClientPort.Cotacao> cotacoesValidas =
+                cotacoes.stream()
+                        .filter(cotacao ->
+                                cotacao.valor() != null
+                                        && cotacao.valor().compareTo(
+                                        BigDecimal.ZERO) > 0)
+                        .toList();
+
+        if (cotacoesValidas.isEmpty()) {
             return List.of(
                     new ConversaoMoedaDTO(
                             null, null, null, null, false)
             );
         }
 
-        return cotacoes.stream()
+        return cotacoesValidas.stream()
                 .map(cotacao -> new ConversaoMoedaDTO(
                         cotacao.moeda(),
                         converterValorUseCase.converter(
-                                transacao.getValor(), cotacao.valor()),
+                                transacao.getValor(),
+                                cotacao.valor()),
                         cotacao.valor(),
                         cotacao.data(),
                         true))
